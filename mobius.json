@@ -1,7 +1,7 @@
 {
   "id": "ball-game",
   "name": "Ball Game",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Precision ball racing on Godot and Jolt: roll, carve, jump and loop through a pirate bay, a forest and a winter wonderland, race your ghost, and climb the community leaderboard.",
   "entry": "index.jsx",
   "icon": "icon.png",
