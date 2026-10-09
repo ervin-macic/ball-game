@@ -35,11 +35,23 @@ python3 ball-game/tools/fetch_assets.py
   `remove_doc`), which Godot calls through `JavaScriptBridge`; the app frame has
   no IndexedDB for `user://` files. Each finished run also signals
   `item_created`.
+- Graphics programs: browsers on Windows compile each WebGL program in a third
+  of a second or more, and Godot 4.7's web renderer compiles four variants of
+  every material's shader up front that it never draws with (each render pass
+  picks a variant that says how lightmaps are handled; those four don't). The
+  host page gives exactly those a tiny stand-in (`skipUnusedShaderVariants`),
+  about half of all compiles, and signals `error` (`shader_variant`) if a
+  stand-in is ever drawn with. Re-check the rule when upgrading Godot.
+- When a level is ready the game reports its loading time through
+  `window.ballGameHost.level_ready`, and the page signals `level_ready`
+  (download, build and graphics seconds, programs compiled and skipped,
+  browser); `app_ready` carries the program counts at start-up too.
 
 ## Levels and their downloads
 
-The game has the original test track plus three themed levels (beach, forest,
-winter; see `ball-game/README.md`). The test track is in the main game pack;
+The game has the Tutorial Level (the original grid course, id `test_track`)
+plus three themed levels (beach, forest, winter; see `ball-game/README.md`).
+The Tutorial Level is in the main game pack;
 each themed level is its own resource pack (`web/level_<id>.pck`, 2–10 MB),
 downloaded the first time that level is chosen. That keeps every file under the
 16 MiB static-asset cap and start-up as quick as before. The host page fetches

@@ -302,6 +302,87 @@ function exposeHost() {
     hidden() {
       return !visibility.frameVisible || document.visibilityState === 'hidden'
     },
+    // A level is ready to play (level_loader.gd): how long each part of
+    // loading took, with the graphics programs compiled so far, so slow loads
+    // on a player's own machine can be looked into.
+    level_ready(json) {
+      let report = null
+      try {
+        report = JSON.parse(String(json))
+      } catch {
+        return
+      }
+      window.mobius?.signal('level_ready', {
+        ...report,
+        programs: shaderStats.linked,
+        programs_skipped: shaderStats.skipped,
+        browser: browserLabel(),
+      })
+    },
+  }
+}
+
+// --- Graphics programs the game never draws with --------------------------------
+// Godot's web renderer (Compatibility, Godot 4.7) compiles four variants of the
+// 3D scene shader up front for every material it meets, one per drawing mode,
+// with "default" settings (drivers/gles3/shader_gles3.cpp, _initialize_version).
+// The game never draws with those: every render pass asks for a variant that
+// says how lightmaps are handled (DISABLE_LIGHTMAP, USE_LIGHTMAP or
+// USE_LIGHTMAP_CAPTURE), and the defaults say nothing about lightmaps. Browsers
+// on Windows take a third of a second or more per program, and these were
+// about half of all the game compiles, so each gets a tiny stand-in program
+// instead. If a stand-in is ever drawn with (say a Godot upgrade changed the
+// rule), the game reports it once. Re-check this when upgrading Godot.
+const shaderStats = { linked: 0, skipped: 0, misused: false }
+const LIGHTMAP_SETTING = /^#define (DISABLE_LIGHTMAP|USE_LIGHTMAP|USE_LIGHTMAP_CAPTURE)\b/m
+
+function skipUnusedShaderVariants() {
+  const proto = window.WebGL2RenderingContext?.prototype
+  if (!proto || proto.__ballGameShaders) return
+  proto.__ballGameShaders = true
+  const { createShader, shaderSource, attachShader, linkProgram, useProgram } = proto
+  const stages = new WeakMap()
+  const standInShaders = new WeakSet()
+  const standInPrograms = new WeakSet()
+  proto.createShader = function (type) {
+    const shader = createShader.call(this, type)
+    if (shader) stages.set(shader, type)
+    return shader
+  }
+  proto.shaderSource = function (shader, source) {
+    if (typeof source === 'string' && source.includes('SceneDataBlock') && !LIGHTMAP_SETTING.test(source)) {
+      standInShaders.add(shader)
+      const version = source.startsWith('#version') ? source.slice(0, source.indexOf('\n') + 1) : '#version 300 es\n'
+      source = stages.get(shader) === this.FRAGMENT_SHADER
+        ? `${version}precision highp float;\nlayout(location = 0) out vec4 frag_color;\nvoid main() { frag_color = vec4(0.0); }\n`
+        : `${version}void main() { gl_Position = vec4(0.0); }\n`
+    }
+    return shaderSource.call(this, shader, source)
+  }
+  proto.attachShader = function (program, shader) {
+    if (standInShaders.has(shader)) standInPrograms.add(program)
+    return attachShader.call(this, program, shader)
+  }
+  proto.linkProgram = function (program) {
+    if (standInPrograms.has(program)) shaderStats.skipped += 1
+    else shaderStats.linked += 1
+    return linkProgram.call(this, program)
+  }
+  // Godot binds every new program to set it up, so binding one proves
+  // nothing; drawing with a stand-in would.
+  proto.useProgram = function (program) {
+    this.__ballGameStandIn = Boolean(program) && standInPrograms.has(program)
+    return useProgram.call(this, program)
+  }
+  for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'drawRangeElements']) {
+    const draw = proto[name]
+    proto[name] = function (a, b, c, d, e, f) {
+      if (this.__ballGameStandIn && !shaderStats.misused) {
+        shaderStats.misused = true
+        window.mobius?.signal('error', { source: 'shader_variant', message: 'A skipped graphics program was drawn with.' })
+      }
+      return draw.call(this, a, b, c, d, e, f)
+    }
   }
 }
 
@@ -398,6 +479,7 @@ async function startGame({ appId, canvas, onProgress, onEngineLog }) {
   serveCompressedFiles(base, config.compressed || {})
   exposeLevelPacks(base, config.packSizes || {})
   makePointerLockSafe(canvas)
+  skipUnusedShaderVariants()
   quietServiceWorkerQuery()
   await exposeStore(window.mobius?.storage)
   exposeCommunity()
@@ -585,6 +667,8 @@ export default function BallGame({ appId, token }) {
       window.mobius?.signal('app_ready', {
         engine: 'godot-web',
         seconds: Math.round((performance.now() - startedAt) / 1000),
+        programs: shaderStats.linked,
+        programs_skipped: shaderStats.skipped,
         browser,
       })
     }).catch((err) => fail({ kind: 'engine_start', message: String(err?.message || err) }))

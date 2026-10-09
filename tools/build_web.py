@@ -56,6 +56,9 @@ APP_PACKAGE = ["index.jsx", "party.jsx", "mobius.json", "icon.png", "README.md",
 PACKAGED_TREES = ["static/store"]
 GODOT_SOURCE_IGNORED = shutil.ignore_patterns(".godot", "build", "*.tmp", "__pycache__")
 DEFAULT_APP_DIR = "/data/apps/ball-game"
+# Godot exports and video renders share one slot so two heavy jobs never run together
+# in the container's 4 GB. -o keeps the lock out of Godot's child processes.
+HEAVY_SLOT = ["flock", "-o", "-w", "1800", "/run/lock/mobius-heavy.lock"]
 
 
 def find_godot(explicit: str | None) -> str:
@@ -66,7 +69,7 @@ def find_godot(explicit: str | None) -> str:
 
 
 def export(godot: str, target: Path) -> None:
-    command = [godot, "--headless", "--path", str(GODOT_PROJECT), "--export-release", PRESET, str(target / "index.html")]
+    command = [*HEAVY_SLOT, godot, "--headless", "--path", str(GODOT_PROJECT), "--export-release", PRESET, str(target / "index.html")]
     result = subprocess.run(command, capture_output=True, text=True)
     produced = target / "index.wasm"
     if result.returncode != 0 or not produced.is_file():
@@ -160,7 +163,7 @@ def export_level_packs(godot: str, target: Path) -> None:
     write_level_presets()
     for level_id in LEVEL_PACKS:
         out = target / f"level_{level_id}.pck"
-        command = [godot, "--headless", "--path", str(GODOT_PROJECT), "--export-pack", f"Level {level_id}", str(out)]
+        command = [*HEAVY_SLOT, godot, "--headless", "--path", str(GODOT_PROJECT), "--export-pack", f"Level {level_id}", str(out)]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0 or not out.is_file():
             sys.stderr.write(result.stdout[-4000:] + result.stderr[-4000:])

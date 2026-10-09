@@ -19,7 +19,7 @@ export const PARTY_LEVELS = [
   { id: 'beach', title: 'Beach Boardwalk' },
   { id: 'jungle', title: 'Forest' },
   { id: 'winter', title: 'Winter Wonderland' },
-  { id: 'test_track', title: 'Test Track' },
+  { id: 'test_track', title: 'Tutorial Level' },
 ]
 const DEFAULT_LEVELS = ['beach', 'jungle', 'winter']
 // Points for 1st, 2nd, …; everyone else who finishes gets 1, a missed finish 0.
