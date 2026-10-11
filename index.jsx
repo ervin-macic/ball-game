@@ -302,6 +302,21 @@ function exposeHost() {
     hidden() {
       return !visibility.frameVisible || document.visibilityState === 'hidden'
     },
+    // How smoothly a run played (perf_report.gd): frame rate, long frames and
+    // where they were, drawing time; plus how long the engine worked on each
+    // frame (engine_ms, engine_long), timed here.
+    run_started() {
+      engineFrames.busy.length = 0
+    },
+    run_perf(json) {
+      let report = null
+      try {
+        report = JSON.parse(String(json))
+      } catch {
+        return
+      }
+      window.mobius?.signal('run_perf', { ...report, ...engineFrameStats(), browser: browserLabel() })
+    },
     // A level is ready to play (level_loader.gd): how long each part of
     // loading took, with the graphics programs compiled so far, so slow loads
     // on a player's own machine can be looked into.
@@ -320,6 +335,37 @@ function exposeHost() {
       })
     },
   }
+}
+
+// --- How long the engine works on each frame -----------------------------------
+// The engine draws one frame per animation-frame callback. Timing each callback
+// tells a frame the engine was busy with apart from one spent waiting on the
+// graphics card, for the run reports above (run_started resets, run_perf
+// reads). Bounded: a run longer than ~5 minutes keeps its first frames.
+const engineFrames = { busy: [] }
+function measureEngineFrames() {
+  if (window.__ballGameFrameTiming) return
+  window.__ballGameFrameTiming = true
+  const schedule = window.requestAnimationFrame.bind(window)
+  window.requestAnimationFrame = (callback) =>
+    schedule((time) => {
+      const start = performance.now()
+      try {
+        callback(time)
+      } finally {
+        if (engineFrames.busy.length < 20000) engineFrames.busy.push(performance.now() - start)
+      }
+    })
+}
+
+// Signals carry flat values only: engine_ms is "median/95th percentile/max"
+// milliseconds, engine_long how many frames the engine worked longer than a
+// 60 Hz refresh.
+function engineFrameStats() {
+  const busy = [...engineFrames.busy].sort((a, b) => a - b)
+  if (!busy.length) return {}
+  const at = (share) => busy[Math.min(busy.length - 1, Math.floor(busy.length * share))].toFixed(1)
+  return { engine_ms: `${at(0.5)}/${at(0.95)}/${at(1)}`, engine_long: busy.filter((ms) => ms > 16.7).length }
 }
 
 // --- Graphics programs the game never draws with --------------------------------
@@ -480,6 +526,7 @@ async function startGame({ appId, canvas, onProgress, onEngineLog }) {
   exposeLevelPacks(base, config.packSizes || {})
   makePointerLockSafe(canvas)
   skipUnusedShaderVariants()
+  measureEngineFrames()
   quietServiceWorkerQuery()
   await exposeStore(window.mobius?.storage)
   exposeCommunity()

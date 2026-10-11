@@ -1,7 +1,7 @@
 {
   "id": "ball-game",
   "name": "Ball Game",
-  "version": "0.9.0",
+  "version": "0.11.1",
   "description": "Precision ball racing on Godot and Jolt: roll, carve, jump and loop through a pirate bay, a forest and a winter wonderland, race your ghost, and climb the community leaderboard.",
   "entry": "index.jsx",
   "icon": "icon.png",
@@ -31,6 +31,9 @@
     "fixtures/autopilot_beach.json",
     "fixtures/autopilot_jungle.json",
     "fixtures/autopilot_winter.json",
+    "fixtures/autopilot_beach_routes.json",
+    "fixtures/autopilot_jungle_routes.json",
+    "fixtures/autopilot_winter_routes.json",
     "tracks/test_track.json",
     "tracks/beach_8.json",
     "tracks/jungle_8.json",
@@ -50,7 +53,7 @@
   "package_id": "e3ca22cc-bd2e-49b3-94d6-551b81bf09fc",
   "store": {
     "tagline": "Roll, carve and leap through three themed courses and climb the community leaderboard.",
-    "description": "Ball Game is a precision time trial built on Godot and Jolt physics. Roll a ball down winding courses, carve banked turns without scrubbing speed, time your jumps and carry your momentum through loops, corkscrews and up sheer walls.\n\nThree themed levels, each with its own tricks and a short cut that's harder than it looks:\n- Beach Boardwalk: a pirate bay with an open corkscrew, a shipwreck to roll through, a wave to ride, a steam vent that throws you skyward, a towering cliff to climb on momentum alone, and barrels rolling down the boardwalk at you.\n- Forest: a slippery log bridge with breaks to jump, a lily pond to hop across, a hollow log, a wall ride and a loop.\n- Winter Wonderland: a holey ice bridge, black ice, a candy corkscrew, a huge bowl, and a finish leap you have to time.\nPlus a Tutorial Level to learn the moves.\n\nThe clock starts on your first move and stops at the finish line. A ghost replays your fastest run while you race, and a live split shows whether you are ahead or behind at every point of the track. Press R to restart instantly.\n\nEvery finished run also goes onto a community leaderboard shared by all Ball Game players, under your Möbius @handle. Runs are checked against the track before they count, so typed-in times and shortcuts don't make the board. Sending a run shares your @handle, your time and the run's recording with the leaderboard's host installation; the board shows each player's best time and number of runs.\n\nWhere your Möbius supports live rooms, Party mode lets friends race the same levels together and crowns a podium.\n\nThe game goes quiet whenever you hide it, and offers lighter graphics options for slower machines. Tune the camera, field of view, mouse sensitivity, sound and graphics in the pause menu. Plays with keyboard and mouse or a gamepad.\n\nNeeds a browser with WebGL 2. Posting to the community leaderboard needs a Möbius account with an @handle and an online installation; your own leaderboard always works.",
+    "description": "Ball Game is a precision time trial built on Godot and Jolt physics. Roll a ball down winding courses, carve banked turns without scrubbing speed, time your jumps and carry your momentum through loops, corkscrews and up sheer walls.\n\nThree themed levels, each with its own tricks and a short cut that's harder than it looks:\n- Beach Boardwalk: a pirate bay with an open corkscrew, a shipwreck to roll through, a wave to ride, a steam vent that throws you skyward, a towering cliff to climb on momentum alone, and barrels rolling down the boardwalk at you.\n- Forest: a slippery log bridge with breaks to jump, a lily pond to hop across, a hollow log, a wall ride and a loop.\n- Winter Wonderland: a holey ice bridge, black ice, a candy corkscrew, a huge bowl, and a finish leap you have to time.\nPlus a Tutorial Level to learn the moves.\n\nThe clock starts on your first move and stops at the finish line. A ghost replays your fastest run while you race, and a live split shows whether you are ahead or behind at every point of the track. Press R to restart instantly.\n\nEvery finished run also goes onto a community leaderboard shared by all Ball Game players, under your Möbius @handle. Runs are checked against the track before they count, so typed-in times and long shortcuts don't make the board. Sending a run shares your @handle, your time and the run's recording with the leaderboard's host installation; the board shows each player's best time and number of runs.\n\nWhere your Möbius supports live rooms, Party mode lets friends race the same levels together and crowns a podium.\n\nThe game goes quiet whenever you hide it, and offers lighter graphics options for slower machines. Tune the camera, field of view, mouse sensitivity, sound and graphics in the pause menu. Plays with keyboard and mouse or a gamepad.\n\nNeeds a browser with WebGL 2. Posting to the community leaderboard needs a Möbius account with an @handle and an online installation; your own leaderboard always works.",
     "screenshots": [
       {
         "src": "static/store/1-beach-corkscrew.jpg",

@@ -2,9 +2,13 @@
 
 One Möbius installation (the hub) keeps the shared board in SQLite. Every run
 arrives with its ghost recording, which is checked against the track outline
-exported from the game (tracks/<track>.json): it must start at the spawn, end
-at the finish, move no faster than the ball can, and follow the road the whole
-way. That stops typed-in times and shortcuts; it can't stop a player who
+exported from the game (tracks/<track>.json) by the game's own rules: it must
+start at the spawn, end going through the finish gate (between the posts and
+under the banner, as the game counts a finish), move no faster than the ball
+can, and never stay away from the track longer than the game allows (it sends
+the ball back to the start after about 4 s off the track, so however a run
+got to the gate, it only strayed briefly, and it counts). That stops
+typed-in times, teleports and long shortcuts; it can't stop a player who
 fabricates a whole plausible recording, which no client-trusting game can.
 """
 from __future__ import annotations
@@ -23,11 +27,11 @@ BOARD_SIZE = 10
 
 # Run checks. Distances are metres, speeds metres per second.
 START_RADIUS = 3.0         # the first sample is the ball on the spawn point
-FINISH_RADIUS = 15.0       # the last sample is just before the finish gate
-OFF_ROAD = 20.0            # default furthest a sample may be from the centreline (a track's outline may widen it)
+OFF_ROAD = 32.0            # away from the track: further than this beside every part of it
+OFF_ROAD_DROP = 4.0        # ...or this far below it (RaceManager.off_track_reach/drop; outlines carry their own)
+SLACK = 4.0                # the outline is the road's centre, sampled every 2 m
+OFF_TRACK_SECONDS = 6.0    # longest time away from the track (the game allows about 4 s)
 SPEED_MARGIN = 1.1         # over the ball's hard speed cap
-FINISH_MARGIN = 15.0       # the run must reach this close to the finish along the track
-SEARCH_BACK, SEARCH_AHEAD = 5, 25   # centreline points searched around the last match
 MIN_TIME, MAX_TIME = 5.0, 900.0
 # A player can't finish runs faster than they can drive them: runs from one
 # player must be at least this share of the run's own time apart.
@@ -85,33 +89,55 @@ def check_run(track: str, seconds, ghost) -> None:
     points = [(flat[i] / 1000, flat[i + 1] / 1000, flat[i + 2] / 1000) for i in range(0, len(flat), 3)]
 
     shape = outline(track)
-    centre = shape['centreline']
     require(math.dist(points[0], shape['spawn']) <= START_RADIUS, "The run doesn't start on the start line.")
-    require(math.dist(points[-1], shape['finish']['origin']) <= FINISH_RADIUS, "The run doesn't end at the finish.")
     step_limit = shape['max_speed'] * SPEED_MARGIN / hz
-    off_road = shape.get('off_road', OFF_ROAD)
-    # Alternative routes: points along each, with the main-track distance they stand for.
-    branch_points = [p for branch in shape.get('branches', []) for p in branch]
-    index = 0
-    furthest = 0.0
+    require(_ends_at_finish(shape['finish'], points, step_limit), "The run doesn't end at the finish.")
+    near_track = _track_nearness(shape)
+    away, longest_away = 0, OFF_TRACK_SECONDS * hz
     for i, point in enumerate(points):
         if i:
             require(math.dist(point, points[i - 1]) <= step_limit, 'The ball moved faster than it can.')
-        low, high = max(0, index - SEARCH_BACK), min(len(centre), index + SEARCH_AHEAD + 1)
-        nearest = min(range(low, high), key=lambda j: math.dist(point, centre[j][:3]))
-        if math.dist(point, centre[nearest][:3]) <= off_road:
-            index = nearest
-            furthest = max(furthest, centre[index][3])
-            continue
-        # Off the main road: it must be on a route that leaves from around here.
-        reach_low, reach_high = centre[low][3] - 10.0, centre[high - 1][3] + 10.0
-        on_route = [b for b in branch_points
-                    if reach_low <= b[3] <= reach_high and math.dist(point, b[:3]) <= off_road]
-        require(on_route, 'The run left the track.')
-        along = min(on_route, key=lambda b: math.dist(point, b[:3]))[3]
-        index = min(range(len(centre)), key=lambda j: abs(centre[j][3] - along))
-        furthest = max(furthest, along)
-    require(furthest >= shape['finish_distance'] - FINISH_MARGIN, "The run didn't follow the whole track.")
+        away = 0 if near_track(point) else away + 1
+        require(away <= longest_away, 'The run left the track for too long.')
+
+
+def _ends_at_finish(finish: dict, points: list, step_limit: float) -> bool:
+    """Whether the run ends going through the finish gate, where the game counts
+    a finish: between the posts, from the road up to the banner (the outline's
+    opening). The last recorded position is at most one recorded step from where
+    the ball went through, so it must be that close to the way through."""
+    step = math.dist(points[-1], points[-2]) if len(points) > 1 else step_limit
+    reach = min(2.0 * step, step_limit) + 1.0  # the ball may speed up a little within a step
+    offset = [points[-1][k] - finish['origin'][k] for k in range(3)]
+    along_axis = lambda axis: sum(offset[k] * axis[k] for k in range(3))
+    side, height, along = abs(along_axis(finish['right'])), along_axis(finish['up']), along_axis(finish['forward'])
+    bottom, top = finish['opening']
+    beside = max(side - finish['gate_width'] / 2, 0.0)
+    above_or_below = max(bottom - height, height - top, 0.0)
+    return math.sqrt(beside ** 2 + above_or_below ** 2 + along ** 2) <= reach
+
+
+def _track_nearness(shape: dict):
+    """A test of whether a position is near the track, as the game judges it:
+    within reach beside some part of the main track or a route, and not too far
+    below it (above doesn't count: the ball can fly high off a jump or vent)."""
+    reach = shape.get('off_road', OFF_ROAD) + SLACK
+    drop = shape.get('off_road_drop', OFF_ROAD_DROP) + SLACK
+    grid: dict[tuple[int, int], list] = {}
+    for q in shape['centreline'] + [q for branch in shape.get('branches', []) for q in branch]:
+        grid.setdefault((math.floor(q[0] / reach), math.floor(q[2] / reach)), []).append(q)
+
+    def near(point) -> bool:
+        x, y, z = point
+        cx, cz = math.floor(x / reach), math.floor(z / reach)
+        for cell in ((cx, cz), (cx - 1, cz), (cx + 1, cz), (cx, cz - 1), (cx, cz + 1),
+                     (cx - 1, cz - 1), (cx + 1, cz - 1), (cx - 1, cz + 1), (cx + 1, cz + 1)):
+            for q in grid.get(cell, ()):
+                if q[1] - y <= drop and math.hypot(q[0] - x, q[2] - z) <= reach:
+                    return True
+        return False
+
+    return near
 
 
 def connect(path: Path) -> sqlite3.Connection:

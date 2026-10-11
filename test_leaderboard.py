@@ -100,20 +100,96 @@ class ThemedLevels(unittest.TestCase):
                 ghost = json.loads(Path(__file__).with_name('fixtures').joinpath(f'autopilot_{level}_routes.json').read_text())
                 L.check_run(TRACKS[level], ghost['time'], ghost)
 
-    def test_a_route_lap_needs_the_route_in_the_outline(self):
-        ghost = json.loads(Path(__file__).with_name('fixtures').joinpath('autopilot_winter_routes.json').read_text())
-        shape = dict(L.outline(TRACKS['winter']), branches=[])
-        L._outlines['winter_no_routes'] = shape
-        try:
-            with self.assertRaises(L.Problem):
-                L.check_run('winter_no_routes', ghost['time'], ghost)
-        finally:
-            L._outlines.pop('winter_no_routes')
-
     def test_a_lap_of_another_level_is_rejected(self):
         ghost = self.lap('jungle')
         with self.assertRaises(L.Problem):
             L.check_run('winter_9', ghost['time'], ghost)
+
+
+class OffTrackRules(unittest.TestCase):
+    """The game's own rules on a straight test track: short trips off the track
+    are fine (the game sends the ball back after about 4 s), long ones aren't;
+    a run has to end going through the finish gate, between the posts and under
+    the banner."""
+
+    def setUp(self):
+        L._outlines['straight'] = {
+            'spawn': [0.0, 0.55, 0.0], 'max_speed': 120.0, 'off_road': 32.0, 'off_road_drop': 4.0,
+            'finish': {'origin': [1100.0, 0.0, 0.0], 'forward': [1.0, 0.0, 0.0], 'right': [0.0, 0.0, 1.0],
+                       'up': [0.0, 1.0, 0.0], 'gate_width': 11.4, 'opening': [-0.5, 5.9]},
+            'centreline': [[float(x), 0.0, 0.0, float(x)] for x in range(0, 1201, 2)],
+            'branches': [[[float(x), 0.0, 100.0, float(x)] for x in range(200, 601, 2)]],
+        }
+
+    def tearDown(self):
+        L._outlines.pop('straight')
+
+    @staticmethod
+    def run_along(offset=lambda x: (0.0, 0.0), samples=1100):
+        """A run at 30 m/s along the straight, sideways/up by offset(x) (metres),
+        its last sample just before the finish line."""
+        points = [[x, 0.55 + offset(x)[1], offset(x)[0]] for x in (i * 1.0 for i in range(samples))]
+        return {'v': 1, 'hz': 30, 'time': len(points) / 30,
+                'p': [round(v * 1000) for point in points for v in point]}
+
+    @staticmethod
+    def ending(side, up):
+        """Easing over the last 40 m to finish `side` beside and `up` above the road's middle."""
+        return lambda x: (side * min(1.0, max(0.0, (x - 1059) / 40)), up * min(1.0, max(0.0, (x - 1059) / 40)))
+
+    @staticmethod
+    def trip(start, seconds, distance):
+        """Out to `distance` beside the track at 3 m per sample, stay for `seconds`, back."""
+        ramp = distance / 3.0
+        def offset(x):
+            t = x - start
+            if t < 0:
+                return 0.0
+            return max(0.0, min(distance, t * 3.0, (2 * ramp + seconds * 30 - t) * 3.0))
+        return offset
+
+    def check(self, ghost, track='straight'):
+        L.check_run(track, ghost['time'], ghost)
+
+    def test_a_short_trip_off_the_track_is_accepted(self):
+        self.check(self.run_along(lambda x: (self.trip(700, 2.0, 80.0)(x), 0.0)))
+
+    def test_a_long_trip_off_the_track_is_rejected(self):
+        with self.assertRaises(L.Problem) as caught:
+            self.check(self.run_along(lambda x: (self.trip(700, 7.0, 80.0)(x), 0.0)))
+        self.assertIn('left the track for too long', caught.exception.message)
+
+    def test_flying_high_above_the_track_is_not_leaving_it(self):
+        self.check(self.run_along(lambda x: (0.0, self.trip(700, 8.0, 90.0)(x))))
+
+    def test_rolling_far_below_the_track_is_leaving_it(self):
+        with self.assertRaises(L.Problem):
+            self.check(self.run_along(lambda x: (0.0, -self.trip(700, 7.0, 30.0)(x))))
+
+    def test_an_alternative_route_counts_as_track(self):
+        on_route = self.run_along(lambda x: (self.trip(170, 12.0, 100.0)(x), 0.0))
+        self.check(on_route)
+        L._outlines['straight']['branches'] = []
+        with self.assertRaises(L.Problem):
+            self.check(on_route)
+
+    def test_a_finish_goes_through_the_gate(self):
+        self.check(self.run_along())  # rolling through the middle
+        self.check(self.run_along(self.ending(-5.0, 0.0)))  # right up by a post
+        self.check(self.run_along(self.ending(1.0, 4.5)))  # jumping through under the banner
+
+    def test_passing_beside_over_or_under_the_gate_is_rejected(self):
+        for side, up, where in ((10.0, 0.0, 'beside a post'), (0.0, 12.0, 'over the banner'),
+                                (0.0, -9.5, 'under the road, having missed a leap'), (18.0, 0.0, 'far beside')):
+            with self.subTest(where=where):
+                with self.assertRaises(L.Problem) as caught:
+                    self.check(self.run_along(self.ending(side, up)))
+                self.assertIn("doesn't end at the finish", caught.exception.message)
+
+    def test_ending_short_of_the_line_is_rejected(self):
+        with self.assertRaises(L.Problem) as caught:
+            self.check(self.run_along(samples=1080))
+        self.assertIn("doesn't end at the finish", caught.exception.message)
 
 
 class Board(unittest.TestCase):

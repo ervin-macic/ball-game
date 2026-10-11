@@ -45,7 +45,14 @@ python3 ball-game/tools/fetch_assets.py
 - When a level is ready the game reports its loading time through
   `window.ballGameHost.level_ready`, and the page signals `level_ready`
   (download, build and graphics seconds, programs compiled and skipped,
-  browser); `app_ready` carries the program counts at start-up too.
+  browser); `app_ready` carries the program counts at start-up too. The first
+  two runs of each level in a session signal `run_perf` when they end (frame
+  rate, long frames and where on the track they were, the slowest frames,
+  drawing time, window size) through `window.ballGameHost.run_perf`; the page
+  adds `engine_ms` (median/95th percentile/max) and `engine_long`, how long
+  the engine worked on each frame, timed by wrapping `requestAnimationFrame`
+  (`run_started` resets it), so frames lost to the graphics card show up.
+  Signals carry flat values only (at most 20), so lists go as text.
 
 ## Levels and their downloads
 
@@ -91,23 +98,36 @@ Every finished run is sent, with its ghost recording, to one shared board.
   Players need a Möbius account with an @handle to post.
 - **One board per level.** Each level's runs go to its own board (`track`
   = the level id), checked against that level's outline in `tracks/<id>.json`.
-- **Run checks** (`leaderboard.py`). The recording must start on the start
-  line, end at the finish, match the time, never move faster than the ball
-  can, and stay on the road the whole way (checked against
-  `tracks/<level>.json`, exported from the game by
+- **Run checks** (`leaderboard.py`), by the game's own rules: the recording
+  must start on the start line, end going through the finish gate (between
+  the posts and under the banner, as the game counts a finish: its last
+  position within one recorded step of the way through), match the time,
+  never move faster than the ball can, and never be away from the track for
+  more than 6 s at a time (the game sends the ball back to the start after
+  about 4 s off the track, so every run the game counts as finished passes,
+  short cuts included). Away means further beside
+  every part of the track or its routes than the game allows, or too far
+  below it; flying high above doesn't count. The outlines are
+  `tracks/<level>.json`, exported from the game (with its off-track limits
+  and the finish gate's opening) by
   `ball-game/tools/export_track_outline.gd -- ../tracks`; re-export after
-  changing a track). Levels with open ground allow straying further. Runs from one player can't arrive faster than they can be driven.
-  This stops typed-in times, shortcuts and teleports, but a determined cheater
-  can still fabricate a whole plausible recording; no game that trusts its
-  players' devices can rule that out.
+  changing a track, the gate or those limits. Runs from one player can't arrive faster
+  than they can be driven. This stops typed-in times, teleports and long
+  shortcuts, but a determined cheater can still fabricate a whole plausible
+  recording; no game that trusts its players' devices can rule that out.
+  Other installations run the same check before forwarding a run, so their
+  players get these rules once they have this version.
 - **What's sent and what's public.** Each finished run sends the player's
   @handle, the time, and the run's recording (positions and rotations) to the
   hub. The board shows each player's best time and run count to anyone. The hub
   also keeps each player's best recording, not shown yet, for checking
   suspicious runs.
-- **Tests:** `python3 test_service.py` (another installation's run reaching the hub through `exchange`, a forged proof and an unlinked installation refused) and `python3 test_leaderboard.py` (18 checks, including real
-  autopilot laps of every level, doctored versions, and a lap of one level
-  refused on another's board).
+- **Tests:** `python3 test_service.py` (another installation's run reaching the hub through `exchange`, a forged proof and an unlinked installation refused) and `python3 test_leaderboard.py` (25 checks, including real
+  autopilot laps of every level, doctored versions, a lap of one level
+  refused on another's board, and the off-track rules on a straight test
+  track: a short trip off it passes, a long one doesn't, flying high above it
+  is fine, routes count as track, and a run must end through the finish gate,
+  not beside a post, over the banner or under the road).
 
 ## Party mode
 
