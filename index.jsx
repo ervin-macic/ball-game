@@ -11,9 +11,16 @@ const CSS = `
     position: fixed;
     inset: 0;
     overflow: hidden;
+    overscroll-behavior: none;
     background: #16202e;
     color: var(--text);
     font-family: var(--font);
+    /* Thumbs on a phone steer the game: no zoom, scroll, text selection or
+       press-and-hold menus under them. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
   .bg-canvas {
     position: absolute;
@@ -22,6 +29,7 @@ const CSS = `
     height: 100%;
     display: block;
     outline: none;
+    touch-action: none;
     opacity: 0;
     transition: opacity 240ms ease;
   }
@@ -117,20 +125,6 @@ const CSS = `
     font-weight: 700;
     pointer-events: none;
     white-space: nowrap;
-  }
-  .bg-note {
-    position: absolute;
-    left: 50%;
-    bottom: max(16px, var(--mobius-safe-bottom, 0px));
-    transform: translateX(-50%);
-    max-width: calc(100% - 32px);
-    padding: 8px 14px;
-    border-radius: 12px;
-    background: rgba(8, 12, 20, 0.72);
-    color: #fff;
-    font-size: 0.85rem;
-    text-align: center;
-    pointer-events: none;
   }
 `
 
@@ -291,6 +285,83 @@ function exposeParty() {
 // The game (ball-game/scripts/core/app_suspend.gd) polls hidden() and sleeps:
 // paused, silent and barely drawn.
 const visibility = { frameVisible: true }
+
+// Phones and tablets: touch first (no mouse to hover with), however many screen
+// pixels to a browser pixel, and the margins a notch, rounded corners or the
+// home bar need. Möbius reports those as --mobius-safe-* while the game fills
+// the screen (immersive); a page of its own reads the browser's safe area.
+const touchFirstQuery = window.matchMedia?.('(hover: none) and (pointer: coarse)')
+let safeAreaProbe = null
+
+function safeArea() {
+  if (!safeAreaProbe && document.body) {
+    safeAreaProbe = document.createElement('div')
+    safeAreaProbe.setAttribute('aria-hidden', 'true')
+    safeAreaProbe.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none;'
+      + 'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'
+    document.body.appendChild(safeAreaProbe)
+  }
+  const root = getComputedStyle(document.documentElement)
+  const probe = safeAreaProbe ? getComputedStyle(safeAreaProbe) : null
+  const edge = (name) => Math.max(
+    parseFloat(root.getPropertyValue(`--mobius-safe-${name}`)) || 0,
+    parseFloat(probe?.getPropertyValue(`padding-${name}`)) || 0,
+  )
+  return { top: edge('top'), right: edge('right'), bottom: edge('bottom'), left: edge('left') }
+}
+
+function deviceInfo() {
+  return {
+    touch_first: Boolean(touchFirstQuery?.matches),
+    pixel_ratio: window.devicePixelRatio || 1,
+    safe: safeArea(),
+  }
+}
+
+// --- Fewer pixels to copy on phones ---------------------------------------------
+// Every frame the engine's picture is copied across the whole canvas several
+// times (its 3D view onto the screen, the screen onto the page, the page onto the
+// display), each at the screen's full density: on a phone, two million pixels
+// and more each time, more memory traffic than drawing the 3D view itself. With
+// lighter graphics the game asks for a budget (ballGameHost.set_pixel_budget):
+// the page then reports a lower pixel ratio (never below one per browser pixel),
+// so the engine's canvas holds at most that many pixels and the browser scales
+// it up. Everything reads the same ratio (the engine, deviceInfo), so touches
+// land where they should and the UI keeps its size, a little softer.
+const canvasPixels = { budget: 0, installed: false }
+
+function limitCanvasPixels() {
+  if (canvasPixels.installed) return
+  const own = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio')
+  const inherited = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'devicePixelRatio')
+    || Object.getOwnPropertyDescriptor(Window.prototype, 'devicePixelRatio')
+  const read = (own?.get || inherited?.get)?.bind(window)
+  if (!read) return
+  canvasPixels.installed = true
+  Object.defineProperty(window, 'devicePixelRatio', {
+    configurable: true,
+    get() {
+      const ratio = read() || 1
+      const css = window.innerWidth * window.innerHeight
+      if (!canvasPixels.budget || css <= 0) return ratio
+      return Math.max(1, Math.min(ratio, Math.sqrt(canvasPixels.budget / css)))
+    },
+  })
+}
+// The game hears when the page goes out of sight or comes back (perf_report.gd):
+// a browser stops drawing a hidden page, so nothing in the game runs to notice.
+const visibilityListeners = new Set()
+document.addEventListener('visibilitychange', () => {
+  const hidden = document.visibilityState === 'hidden'
+  visibilityListeners.forEach((listener) => {
+    try {
+      listener(hidden)
+    } catch {
+      // The engine is gone (crashed or never started): nothing to tell.
+    }
+  })
+})
+
 function exposeHost() {
   if (window.ballGameHost) return
   window.addEventListener('message', (event) => {
@@ -302,11 +373,26 @@ function exposeHost() {
     hidden() {
       return !visibility.frameVisible || document.visibilityState === 'hidden'
     },
+    // The screen the game is on (scripts/ui/screen_fit.gd): touch first, pixel
+    // ratio and safe-area margins in browser pixels.
+    device() {
+      return JSON.stringify(deviceInfo())
+    },
+    // Lighter graphics: draw the whole game with at most this many pixels
+    // (0: the screen's own density). See limitCanvasPixels.
+    set_pixel_budget(pixels) {
+      canvasPixels.budget = Math.max(0, Number(pixels) || 0)
+    },
     // How smoothly a run played (perf_report.gd): frame rate, long frames and
     // where they were, drawing time; plus how long the engine worked on each
     // frame (engine_ms, engine_long), timed here.
     run_started() {
       engineFrames.busy.length = 0
+    },
+    // perf_report.gd: called with true when the page goes out of sight, false
+    // when it comes back.
+    on_visibility(listener) {
+      visibilityListeners.add(listener)
     },
     run_perf(json) {
       let report = null
@@ -432,6 +518,55 @@ function skipUnusedShaderVariants() {
   }
 }
 
+// --- Showing a frame without waiting on the graphics process ---------------------
+// Godot's web build draws each frame into an off-screen image and copies it to the
+// page once the frame is done (emscripten's offscreen back buffer, which Godot's
+// explicit swap control needs). Before copying, emscripten asks WebGL whether
+// scissoring is on: getParameter(SCISSOR_TEST). Chrome answers that by asking its
+// graphics process and waiting for the reply, so every frame stopped there until
+// the graphics process had worked through everything drawn so far, and the engine
+// couldn't start on the next frame meanwhile (most of a frame's time in a profile
+// of the game in Chrome; it hits phones hardest). isEnabled() gives the same
+// answer from the browser's own record of the setting, without the round trip, so
+// questions about these on/off settings are answered that way.
+const CAPABILITIES = new Set([
+  0x0BE2, // BLEND
+  0x0B44, // CULL_FACE
+  0x0B71, // DEPTH_TEST
+  0x0BD0, // DITHER
+  0x8037, // POLYGON_OFFSET_FILL
+  0x809E, // SAMPLE_ALPHA_TO_COVERAGE
+  0x80A0, // SAMPLE_COVERAGE
+  0x0C11, // SCISSOR_TEST
+  0x0B90, // STENCIL_TEST
+  0x8C89, // RASTERIZER_DISCARD
+])
+
+function answerCapabilityQueriesLocally() {
+  const proto = window.WebGL2RenderingContext?.prototype
+  if (!proto || proto.__ballGameCapabilities) return
+  proto.__ballGameCapabilities = true
+  const { getParameter } = proto
+  proto.getParameter = function (pname) {
+    return CAPABILITIES.has(pname) ? this.isEnabled(pname) : getParameter.call(this, pname)
+  }
+}
+
+// --- Engine errors, for looking into what went wrong on a player's device ---------
+// What the engine prints as an error (a graphics program a phone's driver
+// couldn't build, a script that failed) only showed on the loading line. The
+// first few different ones each session go out as an engine_error signal, so a
+// failure on one device shows up in the app's activity.
+const ENGINE_ERRORS_PER_SESSION = 8
+const engineErrors = new Set()
+
+function reportEngineError(line) {
+  const message = String(line || '').trim()
+  if (!/ERROR/.test(message) || engineErrors.has(message) || engineErrors.size >= ENGINE_ERRORS_PER_SESSION) return
+  engineErrors.add(message)
+  window.mobius?.signal('engine_error', { message: message.slice(0, 400), browser: browserLabel() })
+}
+
 // One engine per page: Godot's loader is a page-wide singleton, so a remounted
 // component (or a second effect run) joins the start already in flight.
 let gameStart = null
@@ -489,6 +624,23 @@ function makePointerLockSafe(canvas) {
   }
 }
 
+// --- A finger isn't a mouse ---------------------------------------------------------
+// Godot's web build reads the mouse's movement from pointermove events, and
+// browsers fire those for fingers too. The engine already makes its own mouse
+// events from touches (marked as such), so a moving finger also arrived as a
+// real mouse dragging with its button held (the first finger holds the
+// emulated left button). The camera took every move of the thumb on the stick
+// for the player turning the view by hand, and stopped swinging behind the ball
+// while they steered: all the way through a turn. Fingers on the game reach it
+// as touches only; their pointermove stops here, before the engine's listener.
+function keepFingersFromTheMouse(canvas) {
+  if (keepFingersFromTheMouse.installed) return
+  keepFingersFromTheMouse.installed = true
+  window.addEventListener('pointermove', (event) => {
+    if (event.pointerType === 'touch' && event.target === canvas) event.stopImmediatePropagation()
+  }, true)
+}
+
 // Godot asks for its service-worker registration at start-up even with PWA
 // support off. This opaque frame may not use service workers, and Firefox
 // rejects the query with "The operation is insecure"; report "no registration".
@@ -525,7 +677,10 @@ async function startGame({ appId, canvas, onProgress, onEngineLog }) {
   serveCompressedFiles(base, config.compressed || {})
   exposeLevelPacks(base, config.packSizes || {})
   makePointerLockSafe(canvas)
+  keepFingersFromTheMouse(canvas)
   skipUnusedShaderVariants()
+  answerCapabilityQueriesLocally()
+  limitCanvasPixels()
   measureEngineFrames()
   quietServiceWorkerQuery()
   await exposeStore(window.mobius?.storage)
@@ -555,7 +710,11 @@ async function startGame({ appId, canvas, onProgress, onEngineLog }) {
     persistentPaths: [],
     onProgress,
     onPrint: (...parts) => onEngineLog(parts.join(' ')),
-    onPrintError: (...parts) => onEngineLog(parts.join(' ')),
+    onPrintError: (...parts) => {
+      const line = parts.join(' ')
+      reportEngineError(line)
+      onEngineLog(line)
+    },
   })
   levelPacks.engine = engine
   await engine.startGame()
@@ -581,6 +740,10 @@ function exposeLevelPacks(base, sizes) {
     },
     pack_state(name) {
       return JSON.stringify(levelPacks.states.get(String(name)) || { status: 'none' })
+    },
+    // Whether this build has a pack (a level's lighter one for phones, say).
+    has_pack(name) {
+      return Object.prototype.hasOwnProperty.call(levelPacks.sizes || {}, String(name))
     },
   }
 }
@@ -639,7 +802,9 @@ export default function BallGame({ appId, token }) {
   const [failure, setFailure] = useState(null)
   const [slow, setSlow] = useState(false)
   const [focused, setFocused] = useState(false)
-  const [touchOnly] = useState(() => window.matchMedia?.('(hover: none) and (pointer: coarse)').matches)
+  // Touch screens play with the game's own on-screen controls, which need no
+  // keyboard focus.
+  const [touchOnly] = useState(() => Boolean(touchFirstQuery?.matches))
 
   useEffect(() => {
     const post = (value) => window.parent.postMessage({ type: 'moebius:immersive', value, appId }, '*')
@@ -702,7 +867,8 @@ export default function BallGame({ appId, token }) {
         if (share >= 1 && phaseRef.current === 'loading') setPhase('starting')
       },
       onEngineLog: (line) => {
-        if (cancelled || !line.trim()) return
+        // The loading screen's last line: once the game is up, nothing shows it.
+        if (cancelled || phaseRef.current === 'ready' || !line.trim()) return
         lastActivity = performance.now()
         lastLine = line.trim()
         setEngineLine(lastLine.slice(0, 160))
@@ -748,11 +914,8 @@ export default function BallGame({ appId, token }) {
         aria-label="Ball Game"
         onContextMenu={(event) => event.preventDefault()}
       />
-      {phase === 'ready' && !focused && <div className="bg-hint">Click to play</div>}
+      {phase === 'ready' && !focused && !touchOnly && <div className="bg-hint">Click to play</div>}
       {phase === 'ready' && party && <PartyOverlay party={party} />}
-      {phase === 'ready' && touchOnly && (
-        <div className="bg-note">Ball Game is played with a keyboard and mouse, or a gamepad.</div>
-      )}
       {phase !== 'ready' && (
         <div className="bg-cover" role="status" aria-live="polite">
           <div className="bg-card">

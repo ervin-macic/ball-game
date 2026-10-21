@@ -450,7 +450,7 @@ export const PARTY_CSS = `
   .pt-layer { position: absolute; inset: 0; pointer-events: none; font-family: var(--font); color: #fff; }
   .pt-layer button, .pt-layer input, .pt-card, .pt-panel, .pt-chip { pointer-events: auto; }
   .pt-chip {
-    position: absolute; top: max(14px, var(--mobius-safe-top, 0px)); right: 14px;
+    position: absolute; top: max(14px, var(--mobius-safe-top, 0px)); right: max(14px, var(--mobius-safe-right, 0px));
     display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px;
     border-radius: 999px; border: 1px solid rgba(255,255,255,0.22); background: rgba(8,12,20,0.72);
     color: #fff; font: inherit; font-weight: 700; cursor: pointer; backdrop-filter: blur(6px);
@@ -484,7 +484,7 @@ export const PARTY_CSS = `
   .pt-divider { margin: 18px 0 14px; height: 1px; background: rgba(255,255,255,0.12); }
   .pt-error { margin: 12px 0 0; color: #ff9b9b; font-size: 0.9rem; }
   .pt-panel {
-    position: absolute; top: max(14px, var(--mobius-safe-top, 0px)); right: 14px; width: min(320px, calc(100% - 28px));
+    position: absolute; top: max(14px, var(--mobius-safe-top, 0px)); right: max(14px, var(--mobius-safe-right, 0px)); width: min(320px, calc(100% - 28px));
     max-height: calc(100% - 28px); overflow: auto; padding: 16px; border-radius: 18px; box-sizing: border-box;
     background: rgba(10,15,25,0.86); border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(8px);
   }
@@ -518,7 +518,7 @@ export const PARTY_CSS = `
   .pt-count.is-go { color: #ffd166; animation: none; }
   @keyframes pt-pop { 0% { transform: translate(-50%, -50%) scale(1.25); opacity: 0.6; } 25% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .pt-count { animation: none; } }
-  .pt-standings { position: absolute; top: max(70px, var(--mobius-safe-top, 0px)); right: 14px; display: grid; gap: 4px; min-width: 200px; }
+  .pt-standings { position: absolute; top: max(70px, var(--mobius-safe-top, 0px)); right: max(14px, var(--mobius-safe-right, 0px)); display: grid; gap: 4px; min-width: 200px; }
   .pt-standings div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(8,12,20,0.66); font-size: 0.88rem; font-weight: 700; }
   .pt-standings .is-you { outline: 2px solid rgba(255,255,255,0.55); }
   .pt-standings span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.8); }

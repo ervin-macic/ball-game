@@ -6,7 +6,7 @@
   "executable": "index",
   "experimentalVK": false,
   "fileSizes": {
-    "index.pck": 527244,
+    "index.pck": 561372,
     "index.wasm": 39514754
   },
   "focusCanvas": true,
@@ -17,8 +17,11 @@
     "index.wasm": "index.wasm.gz"
   },
   "packSizes": {
-    "level_beach.pck": 5102776,
-    "level_jungle.pck": 8355872,
-    "level_winter.pck": 4207648
+    "level_beach.pck": 5103752,
+    "level_beach.mobile.pck": 3960456,
+    "level_jungle.pck": 8356656,
+    "level_jungle.mobile.pck": 4730832,
+    "level_winter.pck": 4208720,
+    "level_winter.mobile.pck": 2600416
   }
 }

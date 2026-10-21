@@ -2,7 +2,8 @@
 
 Precision ball racing for [Möbius](https://github.com/mobius-os), built in
 Godot 4 with Jolt Physics. Roll, carve, jump and loop against the clock, race a
-ghost of your best run, and climb a leaderboard shared by every player.
+ghost of your best run, and climb a leaderboard shared by every player. Plays
+with keyboard and mouse, a gamepad, or a phone's or tablet's touch screen.
 
 ![Racing the ghost](static/store/1-ghost-split.jpg)
 
@@ -42,17 +43,61 @@ python3 ball-game/tools/fetch_assets.py
   host page gives exactly those a tiny stand-in (`skipUnusedShaderVariants`),
   about half of all compiles, and signals `error` (`shader_variant`) if a
   stand-in is ever drawn with. Re-check the rule when upgrading Godot.
+- Showing each frame: Godot's web build draws a frame into an off-screen image
+  and copies it onto the page when done, and before copying it asked WebGL
+  whether scissoring was on. Chrome answers that by waiting for its graphics
+  process to work through everything drawn so far, so the engine couldn't
+  start on the next frame meanwhile: most of a frame's time in a profile of
+  the game in Chrome, and worst on phones. The host page answers those on/off
+  questions from the browser's own record instead (`isEnabled`, the same
+  answer without the wait: `answerCapabilityQueriesLocally`).
+- Fingers aren't a mouse: Godot's web build reads the mouse's movement from
+  `pointermove`, which browsers fire for fingers too, so a finger moving on the
+  stick also arrived as a mouse dragging with its button held, and the camera
+  took it for the player turning the view (it stopped following the ball while
+  they steered). The page stops fingers' `pointermove` on the game's canvas
+  before the engine sees it (`keepFingersFromTheMouse`); touches still arrive
+  as touches.
+- Phones' pixels: with lighter graphics the game asks the page for a pixel
+  budget (`ballGameHost.set_pixel_budget`), and the page then reports a lower
+  pixel ratio (never below one per browser pixel), so the engine's canvas
+  holds at most that many pixels and the browser scales it up
+  (`limitCanvasPixels`). Every frame is copied across the whole canvas several
+  times on its way to the display, which at a phone's full density cost more
+  than drawing the 3D view.
 - When a level is ready the game reports its loading time through
   `window.ballGameHost.level_ready`, and the page signals `level_ready`
   (download, build and graphics seconds, programs compiled and skipped,
   browser); `app_ready` carries the program counts at start-up too. The first
   two runs of each level in a session signal `run_perf` when they end (frame
   rate, long frames and where on the track they were, the slowest frames,
-  drawing time, window size) through `window.ballGameHost.run_perf`; the page
+  drawing time, window size in screen pixels, the 3D view's render scale,
+  whether touch controls were up) through `window.ballGameHost.run_perf`; the page
   adds `engine_ms` (median/95th percentile/max) and `engine_long`, how long
   the engine worked on each frame, timed by wrapping `requestAnimationFrame`
   (`run_started` resets it), so frames lost to the graphics card show up.
-  Signals carry flat values only (at most 20), so lists go as text.
+  Signals carry flat values only (at most 20), so lists go as text. A run
+  left by putting the game out of sight (another app, the home screen,
+  closing it) is reported then, as far as it went (a browser stops a hidden
+  page outright, so the page tells the game: `ballGameHost.on_visibility`).
+  Each report also says how the camera followed the ball (`camera`: the share
+  of the time the player's look input held the view, and how far the view was
+  turned from the ball's travel). The first few different
+  errors the engine prints in a session (a graphics program a phone's driver
+  couldn't build, a script that failed) go out as `engine_error` signals, so a
+  failure on one device shows up in the app's activity.
+
+## Phones and tablets
+
+The page tells the game what screen it's on through
+`window.ballGameHost.device()`: whether it's touch first (no mouse to hover
+with), the pixel ratio, and the safe-area margins (Möbius' `--mobius-safe-*`
+while the game fills the screen, or the browser's own safe area). The game
+then lays its UI out in browser pixels, shows its touch controls and turns on
+lighter graphics (see `ball-game/README.md`, *On phones and tablets*). The
+page keeps the browser from zooming, scrolling or selecting text under the
+player's thumbs (`touch-action: none` and friends) and doesn't ask touch
+screens to click into the game first.
 
 ## Levels and their downloads
 
@@ -60,7 +105,10 @@ The game has the Tutorial Level (the original grid course, id `test_track`)
 plus three themed levels (beach, forest, winter; see `ball-game/README.md`).
 The Tutorial Level is in the main game pack;
 each themed level is its own resource pack (`web/level_<id>.pck`, 2–10 MB),
-downloaded the first time that level is chosen. That keeps every file under the
+downloaded the first time that level is chosen. Each also has a lighter pack
+for phones (`web/level_<id>.mobile.pck`: textures at most 512 px, skies at
+most 2048 px), which the game asks for with lighter graphics when the page has
+it (`ballGameAssets.has_pack`, from `packSizes` in `web/config.json`). That keeps every file under the
 16 MiB static-asset cap and start-up as quick as before. The host page fetches
 a pack with progress and writes it into the engine's in-memory file system
 (`window.ballGameAssets`: `fetch_pack`, `pack_state`), where the game mounts it.
