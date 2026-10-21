@@ -6,7 +6,7 @@
   "executable": "index",
   "experimentalVK": false,
   "fileSizes": {
-    "index.pck": 633744,
+    "index.pck": 633600,
     "index.wasm": 39514754
   },
   "focusCanvas": true,
