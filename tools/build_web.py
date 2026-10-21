@@ -20,15 +20,17 @@ Before packaging, the exported game is started the way a browser gets it:
 the main pack alone (levels' assets aren't in it), then each level pack
 mounted on top. A script error in the main pack fails the build (a script
 compiled at start-up that needs something only a level pack carries breaks
-the whole game in the browser, though every test passes on the project);
-level packs' script errors are listed as warnings.
+the whole game in the browser, though every test passes on the project), and
+so does one while a level is built from its pack (that level would open
+without most of what its script builds).
 
 Themed levels ship as separate resource packs (web/level_<id>.pck), each
 downloaded the first time that level is played: one pack per level keeps every
 file under Möbius' per-file cap and start-up as quick as before. The main
 "Web" preset excludes them; this script works out each level's files (its
 folder plus every res:// asset its scenes, materials and scripts name, even
-through string constants) and exports them with a generated pack preset.
+through string constants, and those the shared scripts it uses by class name
+preload) and exports them with a generated pack preset.
 
 Each level also ships a lighter pack for phones (web/level_<id>.mobile.pck,
 fetched with the game's lighter graphics): the same files with textures at
@@ -95,13 +97,29 @@ def export(godot: str, target: Path) -> None:
         sys.exit(f"Godot export failed (exit {result.returncode}). Export templates for this Godot version must be installed.")
 
 
+def script_classes() -> dict[str, str]:
+    """The game's named scripts (class_name) under scripts/, by name, as res:// paths."""
+    classes = {}
+    for script in sorted((GODOT_PROJECT / "scripts").rglob("*.gd")):
+        match = re.search(r"^class_name\s+(\w+)", script.read_text(encoding="utf-8", errors="replace"), re.M)
+        if match:
+            classes[match.group(1)] = "res://" + str(script.relative_to(GODOT_PROJECT))
+    return classes
+
+
 def level_files(level_id: str) -> list[str]:
     """Every project file a level pack needs, as res:// paths.
 
     Follows ext_resource paths in scenes and materials, and res:// strings in
     scripts, including CONST + "relative/path" and "%s" patterns (expanded as
-    wildcards) so assets a script loads by name come along too.
+    wildcards) so assets a script loads by name come along too. Shared scripts
+    a script uses by class name (WreckedShip.new()) are followed as well: they
+    are in the main pack, but the assets they preload are not. Other levels'
+    files are left to their own packs (shared code such as LevelCatalog names
+    every level).
     """
+    classes = script_classes()
+    own = f"res://levels/{level_id}/"
     seen: set[str] = set()
     queue = [f"res://levels/{level_id}/{p.name}" for p in (GODOT_PROJECT / "levels" / level_id).iterdir()
              if p.suffix in (".tscn", ".gd", ".tres")]
@@ -118,6 +136,8 @@ def level_files(level_id: str) -> list[str]:
         text = local.read_text(encoding="utf-8", errors="replace")
         consts = dict(re.findall(r'const\s+(\w+)\s*:?=\s*"(res://[^"]+)"', text))
         found = set(re.findall(r'"(res://[^"]+)"', text))
+        if local.suffix == ".gd":
+            found.update(script for name, script in classes.items() if re.search(rf"\b{name}\b", text))
         for name, base in consts.items():
             found.update(base + rel for rel in re.findall(rf'\b{name}\s*\+\s*"([^"]+)"', text))
             # CONST + variable (e.g. SOUNDS + file): take the folder's files.
@@ -125,6 +145,8 @@ def level_files(level_id: str) -> list[str]:
                 folder = GODOT_PROJECT / base.removeprefix("res://")
                 queue.extend(base + p.name for p in folder.glob("*") if p.is_file() and not p.name.startswith(".") and p.suffix not in (".import", ".json", ".txt"))
         for ref in found:
+            if ref.startswith("res://levels/") and not ref.startswith(own):
+                continue
             if "%" in ref:
                 pattern = re.sub(r"%[sd]", "*", ref.removeprefix("res://"))
                 queue.extend("res://" + str(m.relative_to(GODOT_PROJECT)) for m in GODOT_PROJECT.glob(pattern))
@@ -265,11 +287,16 @@ def smoke_test(godot: str, export_dir: Path) -> None:
         if errors:
             sys.stderr.write("\n".join(errors[:20]) + "\n")
             sys.exit("The exported game has script errors at start-up (see above): it would be broken in the browser.")
+        broken = []
         for name in level_pack_names():
             level_id = name.removeprefix("level_").split(".")[0]
             errors = run("level", str(export_dir / name), f"res://levels/{level_id}/{level_id}_level.tscn")
-            for line in dict.fromkeys(errors):
-                print(f"  warning: {name}: {line.strip()}")
+            broken.extend(f"{name}: {line.strip()}" for line in dict.fromkeys(errors))
+        if broken:
+            # A level whose script fails to load still opens, but without most
+            # of what its script builds.
+            sys.stderr.write("\n".join(broken[:20]) + "\n")
+            sys.exit("A level pack has script errors when its level is built (see above): it would be broken in the browser.")
 
 
 def engine_config(exported_html: Path) -> dict:

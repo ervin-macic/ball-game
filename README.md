@@ -101,9 +101,11 @@ screens to click into the game first.
 
 ## Levels and their downloads
 
-The game has the Tutorial Level (the original grid course, id `test_track`)
-plus three themed levels (beach, forest, winter; see `ball-game/README.md`).
-The Tutorial Level is in the main game pack;
+The game has the Tutorial Level (the original grid course, id `test_track`),
+The Original Track (the same grid look with more obstacles, id `original`)
+and three themed levels (beach, forest, winter; see `ball-game/README.md`).
+The game always opens on the Tutorial Level. The Tutorial Level and The
+Original Track are in the main game pack;
 each themed level is its own resource pack (`web/level_<id>.pck`, 2–10 MB),
 downloaded the first time that level is chosen. Each also has a lighter pack
 for phones (`web/level_<id>.mobile.pck`: textures at most 512 px, skies at

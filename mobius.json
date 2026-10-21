@@ -1,7 +1,7 @@
 {
   "id": "ball-game",
   "name": "Ball Game",
-  "version": "0.13.5",
+  "version": "0.14.0",
   "description": "Precision ball racing on Godot and Jolt: roll, carve, jump and loop through a pirate bay, a forest and a winter wonderland, race your ghost, and climb the community leaderboard.",
   "entry": "index.jsx",
   "icon": "icon.png",
@@ -28,6 +28,7 @@
     "test_leaderboard.py",
     "test_service.py",
     "fixtures/autopilot_lap.json",
+    "fixtures/autopilot_original.json",
     "fixtures/autopilot_beach.json",
     "fixtures/autopilot_jungle.json",
     "fixtures/autopilot_winter.json",
@@ -35,6 +36,7 @@
     "fixtures/autopilot_jungle_routes.json",
     "fixtures/autopilot_winter_routes.json",
     "tracks/test_track.json",
+    "tracks/original.json",
     "tracks/beach_8.json",
     "tracks/jungle_8.json",
     "tracks/winter_9.json"

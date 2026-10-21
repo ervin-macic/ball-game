@@ -31,7 +31,7 @@ def flatten(points):
 
 
 # Each level's current leaderboard track (LevelCatalog records ids).
-TRACKS = {'beach': 'beach_8', 'jungle': 'jungle_8', 'winter': 'winter_9'}
+TRACKS = {'original': 'original', 'beach': 'beach_8', 'jungle': 'jungle_8', 'winter': 'winter_9'}
 
 class RunChecks(unittest.TestCase):
     def rejects(self, seconds, ghost, words):
@@ -89,7 +89,7 @@ class ThemedLevels(unittest.TestCase):
         return json.loads(Path(__file__).with_name('fixtures').joinpath(f'autopilot_{level}.json').read_text())
 
     def test_each_level_accepts_its_own_lap(self):
-        for level in ('beach', 'jungle', 'winter'):
+        for level in ('original', 'beach', 'jungle', 'winter'):
             with self.subTest(level=level):
                 ghost = self.lap(level)
                 L.check_run(TRACKS[level], ghost['time'], ghost)
